@@ -226,17 +226,17 @@ class MMPSdk {
 
     // First hook up the listener (this will auto-replay the RAM buffer if any)
     onDeepLinkReceived((data) {
-      // ────────── Deduplication Guard ──────────
-      // Prevent double execution from overlapping sources (RAM buffer, Storage buffer, Hot Link stream)
-      final signature = json.encode(data.toJson());
       final now = DateTime.now();
-      if (_recentLinkSignature == signature && 
+      
+      // Deduplicate overlapping direct vs deferred links by checking the SLUG within a time window
+      // Prevent double execution from overlapping sources (RAM buffer, Storage buffer, Hot Link stream)
+      if (_recentLinkSignature == data.slug && 
           _recentLinkTime != null && 
-          now.difference(_recentLinkTime!).inMilliseconds < 1500) {
-        _log('AutoPopup deduplication: ignoring identical event within 1.5s');
+          now.difference(_recentLinkTime!).inMilliseconds < 3000) {
+        _log('AutoPopup deduplication: ignoring identical slug event within 3s');
         return;
       }
-      _recentLinkSignature = signature;
+      _recentLinkSignature = data.slug;
       _recentLinkTime = now;
 
       // Clear pending navigation from storage since we are handling it
