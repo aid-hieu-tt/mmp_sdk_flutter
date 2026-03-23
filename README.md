@@ -55,9 +55,11 @@ dependencies:
     <action android:name="android.intent.action.VIEW" />
     <category android:name="android.intent.category.DEFAULT" />
     <category android:name="android.intent.category.BROWSABLE" />
-    <data android:scheme="https" android:host="mmp.omnigen.cloud" />
+    <data android:scheme="https" android:host="mmp.omnigen.cloud" /> <!-- Thay mmp.omnigen.cloud thành Domain trên Admin -->
 </intent-filter>
 ```
+
+> **Lưu ý quan trọng**: Việc khai báo tên miền trên trang Admin chỉ để hệ thống Server nhận diện App. Hệ điều hành Android KHÔNG THỂ tự biết thông tin đó trừ khi bạn tự tay khai báo biến `android:host` vào file `AndroidManifest.xml` trong Source Code của ứng dụng như trên!
 
 ### AndroidManifest.xml hoàn chỉnh (mẫu)
 
