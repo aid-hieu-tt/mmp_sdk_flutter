@@ -300,6 +300,16 @@ class MMPSdk {
     try {
       final Uri? uri = await _appLinks.getInitialAppLink();
       if (uri != null) {
+        final prefs = await SharedPreferences.getInstance();
+        final lastUri = prefs.getString('mmp_last_initial_link');
+        final currentUriStr = uri.toString();
+        
+        if (lastUri == currentUriStr) {
+          _log('Cold start direct link ignored (OS cached intent already processed): $uri');
+          return false;
+        }
+        await prefs.setString('mmp_last_initial_link', currentUriStr);
+
         _log('Cold start direct link: $uri');
         await _handleDirectLink(uri);
         return true;
