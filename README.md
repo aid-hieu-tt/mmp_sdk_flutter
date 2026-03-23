@@ -88,6 +88,45 @@ dependencies:
 
 ---
 
+## Cấu hình iOS (BẮT BUỘC)
+
+Để SDK hoạt động hoàn hảo trên iOS (bao gồm cả tính năng ép mở app - Force Open), bạn **bắt buộc** phải thực hiện 3 bước sau cho mọi ứng dụng mới:
+
+### Bước 1: Khai báo Universal Link (Associated Domains)
+Cho phép đọc link từ web của bạn bằng cách mở dự án trong Xcode (`ios/Runner.xcworkspace`). 
+Trong phần **Signing & Capabilities** của tab Target Runner, thêm Capability **Associated Domains** và khai báo domain của bạn:
+`applinks:mmp.omnigen.cloud` (Thay bằng domain hệ thống MMP của bạn).
+
+### Bước 2: Bật Deep Linking của Flutter trong `Info.plist`
+Mở tệp `ios/Runner/Info.plist` và đảm bảo có khai báo sau:
+```xml
+<key>FlutterDeepLinkingEnabled</key>
+<true/>
+```
+
+### Bước 3: Khai báo Custom URL Scheme trong `Info.plist`
+Hệ thống Redirect server tự động bóc tách **App Slug** của ứng dụng (trong trang Admin) để tạo thành Custom URL Scheme. 
+**Quy tắc:** Lấy `app_slug`, viết liền KHÔNG dấu, KHÔNG ký tự đặc biệt, in thường. (VD: slug là `finance_app` thì scheme là `financeapp`).
+
+Thêm đoạn mã sau vào tệp `ios/Runner/Info.plist` (nhớ thay `financeapp` bằng scheme của bạn):
+```xml
+<key>CFBundleURLTypes</key>
+<array>
+    <dict>
+        <key>CFBundleTypeRole</key>
+        <string>Editor</string>
+        <key>CFBundleURLName</key>
+        <string>MMP Scheme</string>
+        <key>CFBundleURLSchemes</key>
+        <array>
+            <string>financeapp</string> <!-- Thay bằng scheme tương ứng với App Slug -->
+        </array>
+    </dict>
+</array>
+```
+
+---
+
 ## Sử dụng
 
 > ⚠️ **QUAN TRỌNG: Navigator 1.0 vs Navigator 2.0 (go_router)**
