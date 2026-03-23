@@ -402,13 +402,12 @@ class MMPSdk {
       rawUri: uri,
     );
 
-    await _savePendingNavigation(data);
-
     _log('Direct deep link resolved: $data');
     if (_onDeepLinkCallback != null) {
       _onDeepLinkCallback!.call(data);
     } else {
       _log('Callback not yet registered, buffering data for later replay');
+      await _savePendingNavigation(data);
       _pendingData = data;
     }
   }
