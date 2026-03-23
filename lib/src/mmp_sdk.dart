@@ -230,10 +230,12 @@ class MMPSdk {
       
       // Deduplicate overlapping direct vs deferred links by checking the SLUG within a time window
       // Prevent double execution from overlapping sources (RAM buffer, Storage buffer, Hot Link stream)
+      // Increased to 10 seconds (10000ms) because iOS Safari sometimes queues Universal Links and Custom URI Schemes 
+      // with a significant user delay (especially if the user waits to press "Open" on the prompt).
       if (_recentLinkSignature == data.slug && 
           _recentLinkTime != null && 
-          now.difference(_recentLinkTime!).inMilliseconds < 3000) {
-        _log('AutoPopup deduplication: ignoring identical slug event within 3s');
+          now.difference(_recentLinkTime!).inMilliseconds < 10000) {
+        _log('AutoPopup deduplication: ignoring identical slug event within 10s');
         return;
       }
       _recentLinkSignature = data.slug;
