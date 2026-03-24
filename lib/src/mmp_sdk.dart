@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:app_links/app_links.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -54,10 +55,39 @@ class MMPSdk {
 
   // ────────── Debug log (visible in both debug and release) ──────────
   static final List<String> debugLogs = [];
+  static final StreamController<String> _logStream = StreamController<String>.broadcast();
+  /// Stream of debug log entries for the overlay UI.
+  static Stream<String> get logStream => _logStream.stream;
+
   static void _log(String msg) {
     final entry = '[${DateTime.now().toString().substring(11, 19)}] $msg';
     debugLogs.add(entry);
+    _logStream.add(entry);
     print('[MMP SDK] $msg');
+  }
+
+  /// Show a floating debug overlay on the screen.
+  /// Call this after `runApp()` with a valid BuildContext.
+  /// The overlay shows real-time SDK logs and can be dismissed.
+  static OverlayEntry? _overlayEntry;
+
+  static void showDebugOverlay(BuildContext context) {
+    if (_overlayEntry != null) return; // already visible
+    _overlayEntry = OverlayEntry(
+      builder: (_) => _MMPDebugOverlayWidget(
+        onClose: () {
+          _overlayEntry?.remove();
+          _overlayEntry = null;
+        },
+      ),
+    );
+    Overlay.of(context).insert(_overlayEntry!);
+  }
+
+  /// Hide the debug overlay if it's currently visible.
+  static void hideDebugOverlay() {
+    _overlayEntry?.remove();
+    _overlayEntry = null;
   }
 
   // ────────── Private constructor ──────────
@@ -562,5 +592,184 @@ class MMPSdk {
       }
     } catch (_) {}
     return 'Unknown';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DEBUG OVERLAY WIDGET (Internal)
+// ═══════════════════════════════════════════════════════════
+
+class _MMPDebugOverlayWidget extends StatefulWidget {
+  final VoidCallback onClose;
+  const _MMPDebugOverlayWidget({required this.onClose});
+
+  @override
+  State<_MMPDebugOverlayWidget> createState() => _MMPDebugOverlayWidgetState();
+}
+
+class _MMPDebugOverlayWidgetState extends State<_MMPDebugOverlayWidget> {
+  final ScrollController _scrollController = ScrollController();
+  final List<String> _logs = List.from(MMPSdk.debugLogs);
+  StreamSubscription<String>? _subscription;
+  double _top = 80;
+  double _left = 10;
+  bool _minimized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _subscription = MMPSdk.logStream.listen((entry) {
+      if (!mounted) return;
+      setState(() => _logs.add(entry));
+      _scrollToBottom();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+  }
+
+  void _scrollToBottom() {
+    Future.delayed(const Duration(milliseconds: 50), () {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _copyLogs() {
+    final text = _logs.join('\n');
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('📋 Đã copy logs vào clipboard!'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final panelWidth = screenWidth - 20;
+
+    return Positioned(
+      top: _top,
+      left: _left,
+      child: GestureDetector(
+        onPanUpdate: (details) {
+          setState(() {
+            _top += details.delta.dy;
+            _left += details.delta.dx;
+          });
+        },
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            width: panelWidth,
+            height: _minimized ? 44 : 320,
+            decoration: BoxDecoration(
+              color: const Color(0xE6111827),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF3B82F6), width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.5),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                // ─── Title bar ───
+                Container(
+                  height: 44,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E3A5F),
+                    borderRadius: BorderRadius.vertical(
+                      top: const Radius.circular(12),
+                      bottom: _minimized ? const Radius.circular(12) : Radius.zero,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Text('🔍 MMP SDK Logs',
+                        style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600, decoration: TextDecoration.none),
+                      ),
+                      const Spacer(),
+                      _iconBtn(Icons.copy, '📋', _copyLogs),
+                      _iconBtn(Icons.delete_outline, '🗑', () => setState(() => _logs.clear())),
+                      _iconBtn(
+                        _minimized ? Icons.open_in_full : Icons.minimize,
+                        _minimized ? '🔼' : '🔽',
+                        () => setState(() => _minimized = !_minimized),
+                      ),
+                      _iconBtn(Icons.close, '✕', widget.onClose),
+                    ],
+                  ),
+                ),
+                // ─── Log content ───
+                if (!_minimized)
+                  Expanded(
+                    child: _logs.isEmpty
+                        ? const Center(
+                            child: Text('Chưa có log nào...',
+                              style: TextStyle(color: Colors.white38, fontSize: 12, decoration: TextDecoration.none),
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: _scrollController,
+                            padding: const EdgeInsets.all(8),
+                            itemCount: _logs.length,
+                            itemBuilder: (_, index) {
+                              final log = _logs[index];
+                              final isError = log.contains('❌') || log.contains('Failed') || log.contains('error');
+                              final isSuccess = log.contains('✅') || log.contains('resolved') || log.contains('found');
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 1),
+                                child: Text(
+                                  log,
+                                  style: TextStyle(
+                                    color: isError
+                                        ? const Color(0xFFF87171)
+                                        : isSuccess
+                                            ? const Color(0xFF4ADE80)
+                                            : const Color(0xFFD1D5DB),
+                                    fontSize: 11,
+                                    fontFamily: 'monospace',
+                                    height: 1.4,
+                                    decoration: TextDecoration.none,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _iconBtn(IconData icon, String fallback, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Icon(icon, color: Colors.white70, size: 18),
+      ),
+    );
   }
 }
