@@ -307,13 +307,19 @@ class MMPSdk {
       if (uri != null) {
         final prefs = await SharedPreferences.getInstance();
         final lastUri = prefs.getString('mmp_last_initial_link');
+        final lastTimeMs = prefs.getInt('mmp_last_initial_link_time') ?? 0;
         final currentUriStr = uri.toString();
+        final nowMs = DateTime.now().millisecondsSinceEpoch;
         
-        if (lastUri == currentUriStr) {
-          _log('Cold start direct link ignored (OS cached intent already processed): $uri');
+        // Only block if the SAME URI was stored within the last 5 seconds.
+        // This catches Android's OS replaying cached intents on cold start,
+        // but allows the user to click the same link again later.
+        if (lastUri == currentUriStr && (nowMs - lastTimeMs) < 5000) {
+          _log('Cold start direct link ignored (OS cached intent, ${nowMs - lastTimeMs}ms ago): $uri');
           return false;
         }
         await prefs.setString('mmp_last_initial_link', currentUriStr);
+        await prefs.setInt('mmp_last_initial_link_time', nowMs);
 
         _log('Cold start direct link: $uri');
         await _handleDirectLink(uri);
