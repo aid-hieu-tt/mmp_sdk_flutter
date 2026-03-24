@@ -336,6 +336,11 @@ class MMPSdk {
   // ────────── Link deduplication cache ──────────
   static String? _lastHandledUriStr;
   static DateTime? _lastHandledUriTime;
+  // Slug-level dedup: iOS fires both Universal Link AND Custom URL Scheme
+  // for the same slug with a 5-10 second gap. URI dedup can't catch this
+  // because the URIs are completely different strings.
+  static String? _lastHandledSlug;
+  static DateTime? _lastHandledSlugTime;
 
   Future<void> _handleDirectLink(Uri uri) async {
     _log('Direct link received: $uri');
@@ -396,6 +401,16 @@ class MMPSdk {
       }
     }
 
+    // ── Slug-level dedup: iOS fires Universal Link + Custom URL Scheme
+    //    for the same slug with a 5-10 second gap. Block if same slug
+    //    was already resolved within 30 seconds. ──
+    if (slug != null && slug == _lastHandledSlug &&
+        _lastHandledSlugTime != null &&
+        now.difference(_lastHandledSlugTime!).inSeconds < 30) {
+      _log('Ignoring duplicate slug within 30s window: $slug (iOS dual-intent)');
+      return;
+    }
+
     final data = MMPDeeplinkData(
       utmSource: utmSource,
       utmCampaign: utmCampaign,
@@ -406,6 +421,12 @@ class MMPSdk {
       isDirect: true,
       rawUri: uri,
     );
+
+    // Mark this slug as handled BEFORE calling callback
+    if (slug != null) {
+      _lastHandledSlug = slug;
+      _lastHandledSlugTime = now;
+    }
 
     _log('Direct deep link resolved: $data');
     if (_onDeepLinkCallback != null) {
