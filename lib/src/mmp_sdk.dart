@@ -66,30 +66,6 @@ class MMPSdk {
     print('[MMP SDK] $msg');
   }
 
-  /// Show a floating debug overlay on the screen.
-  /// Call this after `runApp()` with a valid BuildContext.
-  /// The overlay shows real-time SDK logs and can be dismissed.
-  static OverlayEntry? _overlayEntry;
-
-  static void showDebugOverlay(BuildContext context) {
-    if (_overlayEntry != null) return; // already visible
-    _overlayEntry = OverlayEntry(
-      builder: (_) => _MMPDebugOverlayWidget(
-        onClose: () {
-          _overlayEntry?.remove();
-          _overlayEntry = null;
-        },
-      ),
-    );
-    Overlay.of(context).insert(_overlayEntry!);
-  }
-
-  /// Hide the debug overlay if it's currently visible.
-  static void hideDebugOverlay() {
-    _overlayEntry?.remove();
-    _overlayEntry = null;
-  }
-
   // ────────── Private constructor ──────────
   MMPSdk._(this._config);
 
@@ -596,24 +572,28 @@ class MMPSdk {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  DEBUG OVERLAY WIDGET (Internal)
+//  DEBUG PANEL WIDGET (Public — place in any Stack)
 // ═══════════════════════════════════════════════════════════
 
-class _MMPDebugOverlayWidget extends StatefulWidget {
-  final VoidCallback onClose;
-  const _MMPDebugOverlayWidget({required this.onClose});
+/// A self-contained debug panel widget.
+/// Place it in a Stack alongside your main content:
+/// ```dart
+/// Stack(children: [MainScaffold(), const MMPDebugPanel()])
+/// ```
+class MMPDebugPanel extends StatefulWidget {
+  const MMPDebugPanel({super.key});
 
   @override
-  State<_MMPDebugOverlayWidget> createState() => _MMPDebugOverlayWidgetState();
+  State<MMPDebugPanel> createState() => _MMPDebugPanelState();
 }
 
-class _MMPDebugOverlayWidgetState extends State<_MMPDebugOverlayWidget> {
+class _MMPDebugPanelState extends State<MMPDebugPanel> {
   final ScrollController _scrollController = ScrollController();
   final List<String> _logs = List.from(MMPSdk.debugLogs);
   StreamSubscription<String>? _subscription;
   double _top = 80;
   double _left = 10;
-  bool _minimized = false;
+  bool _expanded = false;
 
   @override
   void initState() {
@@ -623,7 +603,6 @@ class _MMPDebugOverlayWidgetState extends State<_MMPDebugOverlayWidget> {
       setState(() => _logs.add(entry));
       _scrollToBottom();
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
   }
 
   void _scrollToBottom() {
@@ -648,16 +627,66 @@ class _MMPDebugOverlayWidgetState extends State<_MMPDebugOverlayWidget> {
   void _copyLogs() {
     final text = _logs.join('\n');
     Clipboard.setData(ClipboardData(text: text));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('📋 Đã copy logs vào clipboard!'),
-        duration: Duration(seconds: 2),
+    // Show a temporary snackbar-like feedback
+    final overlay = Overlay.of(context);
+    final entry = OverlayEntry(
+      builder: (_) => Positioned(
+        bottom: 60,
+        left: 40,
+        right: 40,
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF22C55E),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Text('📋 Đã copy logs vào clipboard!',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white, fontSize: 13),
+            ),
+          ),
+        ),
       ),
     );
+    overlay.insert(entry);
+    Future.delayed(const Duration(seconds: 2), () => entry.remove());
   }
 
   @override
   Widget build(BuildContext context) {
+    // When collapsed, just show the small toggle button
+    if (!_expanded) {
+      return Positioned(
+        bottom: 100,
+        right: 12,
+        child: GestureDetector(
+          onTap: () => setState(() => _expanded = true),
+          child: Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E3A5F),
+              shape: BoxShape.circle,
+              border: Border.all(color: const Color(0xFF3B82F6), width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.4),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Center(
+              child: Text('🔍', style: TextStyle(fontSize: 22, decoration: TextDecoration.none)),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Expanded: full log panel
     final screenWidth = MediaQuery.of(context).size.width;
     final panelWidth = screenWidth - 20;
 
@@ -675,7 +704,7 @@ class _MMPDebugOverlayWidgetState extends State<_MMPDebugOverlayWidget> {
           color: Colors.transparent,
           child: Container(
             width: panelWidth,
-            height: _minimized ? 44 : 320,
+            height: 320,
             decoration: BoxDecoration(
               color: const Color(0xE6111827),
               borderRadius: BorderRadius.circular(12),
@@ -694,12 +723,9 @@ class _MMPDebugOverlayWidgetState extends State<_MMPDebugOverlayWidget> {
                 Container(
                   height: 44,
                   padding: const EdgeInsets.symmetric(horizontal: 10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1E3A5F),
-                    borderRadius: BorderRadius.vertical(
-                      top: const Radius.circular(12),
-                      bottom: _minimized ? const Radius.circular(12) : Radius.zero,
-                    ),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF1E3A5F),
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
                   ),
                   child: Row(
                     children: [
@@ -707,54 +733,48 @@ class _MMPDebugOverlayWidgetState extends State<_MMPDebugOverlayWidget> {
                         style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600, decoration: TextDecoration.none),
                       ),
                       const Spacer(),
-                      _iconBtn(Icons.copy, '📋', _copyLogs),
-                      _iconBtn(Icons.delete_outline, '🗑', () => setState(() => _logs.clear())),
-                      _iconBtn(
-                        _minimized ? Icons.open_in_full : Icons.minimize,
-                        _minimized ? '🔼' : '🔽',
-                        () => setState(() => _minimized = !_minimized),
-                      ),
-                      _iconBtn(Icons.close, '✕', widget.onClose),
+                      _iconBtn(Icons.copy, _copyLogs),
+                      _iconBtn(Icons.delete_outline, () => setState(() => _logs.clear())),
+                      _iconBtn(Icons.close, () => setState(() => _expanded = false)),
                     ],
                   ),
                 ),
                 // ─── Log content ───
-                if (!_minimized)
-                  Expanded(
-                    child: _logs.isEmpty
-                        ? const Center(
-                            child: Text('Chưa có log nào...',
-                              style: TextStyle(color: Colors.white38, fontSize: 12, decoration: TextDecoration.none),
-                            ),
-                          )
-                        : ListView.builder(
-                            controller: _scrollController,
-                            padding: const EdgeInsets.all(8),
-                            itemCount: _logs.length,
-                            itemBuilder: (_, index) {
-                              final log = _logs[index];
-                              final isError = log.contains('❌') || log.contains('Failed') || log.contains('error');
-                              final isSuccess = log.contains('✅') || log.contains('resolved') || log.contains('found');
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 1),
-                                child: Text(
-                                  log,
-                                  style: TextStyle(
-                                    color: isError
-                                        ? const Color(0xFFF87171)
-                                        : isSuccess
-                                            ? const Color(0xFF4ADE80)
-                                            : const Color(0xFFD1D5DB),
-                                    fontSize: 11,
-                                    fontFamily: 'monospace',
-                                    height: 1.4,
-                                    decoration: TextDecoration.none,
-                                  ),
-                                ),
-                              );
-                            },
+                Expanded(
+                  child: _logs.isEmpty
+                      ? const Center(
+                          child: Text('Chưa có log nào...',
+                            style: TextStyle(color: Colors.white38, fontSize: 12, decoration: TextDecoration.none),
                           ),
-                  ),
+                        )
+                      : ListView.builder(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.all(8),
+                          itemCount: _logs.length,
+                          itemBuilder: (_, index) {
+                            final log = _logs[index];
+                            final isError = log.contains('❌') || log.contains('Failed') || log.contains('error');
+                            final isSuccess = log.contains('✅') || log.contains('resolved') || log.contains('found');
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 1),
+                              child: Text(
+                                log,
+                                style: TextStyle(
+                                  color: isError
+                                      ? const Color(0xFFF87171)
+                                      : isSuccess
+                                          ? const Color(0xFF4ADE80)
+                                          : const Color(0xFFD1D5DB),
+                                  fontSize: 11,
+                                  fontFamily: 'monospace',
+                                  height: 1.4,
+                                  decoration: TextDecoration.none,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
               ],
             ),
           ),
@@ -763,7 +783,7 @@ class _MMPDebugOverlayWidgetState extends State<_MMPDebugOverlayWidget> {
     );
   }
 
-  Widget _iconBtn(IconData icon, String fallback, VoidCallback onTap) {
+  Widget _iconBtn(IconData icon, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
       child: Padding(
@@ -773,3 +793,4 @@ class _MMPDebugOverlayWidgetState extends State<_MMPDebugOverlayWidget> {
     );
   }
 }
+
